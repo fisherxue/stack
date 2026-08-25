@@ -21,7 +21,7 @@ function mockInteraction({ userId, sub = 'ls', options = {}, channel = 'chan1' }
       getInteger: (name) => options[name] ?? null,
     },
     reply: (msg) => {
-      replies.push(msg);
+      replies.push(typeof msg === 'string' ? msg : msg.content);
       return Promise.resolve();
     },
     deleteReply: () => {
@@ -230,7 +230,7 @@ test('history shows +/- lines newest first; empty says so', async () => {
 
   const h = mockInteraction({ userId: '111', sub: 'history' });
   await handler(h);
-  assert.equal(h.replies[0], '**~**\n- b\n+ b\n+ a');
+  assert.equal(h.replies[0], '**~**\n- b — <@111>\n+ b — <@111>\n+ a — <@111>');
 });
 
 test('ls and history accept a limit option; history defaults to 5', async () => {
@@ -246,7 +246,10 @@ test('ls and history accept a limit option; history defaults to 5', async () => 
 
   const h = mockInteraction({ userId: '111', sub: 'history' });
   await handler(h);
-  assert.equal(h.replies[0], '**~**\n+ t7\n+ t6\n+ t5\n+ t4\n+ t3');
+  assert.equal(
+    h.replies[0],
+    '**~**\n+ t7 — <@111>\n+ t6 — <@111>\n+ t5 — <@111>\n+ t4 — <@111>\n+ t3 — <@111>',
+  );
 
   const h7 = mockInteraction({ userId: '111', sub: 'history', options: { limit: 7 } });
   await handler(h7);
@@ -313,4 +316,52 @@ test('a failed delete (expired token) does not break handling', async () => {
   const push = mockInteraction({ userId: '111', sub: 'push', options: { text: 'still works' } });
   await handler(push);
   assert.equal(push.replies[0], 'still works');
+});
+
+test('history distinguishes pop from rm and shows the actor', async () => {
+  const db = openDb(':memory:');
+  const handler = makeHandler(db, ALLOWED);
+  await handler(mockInteraction({ userId: '111', sub: 'push', options: { text: 'a' } }));
+  await handler(mockInteraction({ userId: '222', sub: 'push', options: { text: 'b' } }));
+  await handler(mockInteraction({ userId: '111', sub: 'pop', options: { n: '2' } })); // rm
+  await handler(mockInteraction({ userId: '222', sub: 'pop' })); // pop
+
+  const h = mockInteraction({ userId: '111', sub: 'history' });
+  await handler(h);
+  assert.equal(
+    h.replies[0],
+    '**~**\n- b — <@222>\n\u00d7 a — <@111>\n+ b — <@222>\n+ a — <@111>',
+  );
+});
+
+test('history * spans stacks with a stack tag per line', async () => {
+  const db = openDb(':memory:');
+  const handler = makeHandler(db, ALLOWED);
+  await handler(mockInteraction({ userId: '111', sub: 'push', options: { text: 'home' } }));
+  ops.push(db, 'work', 'job', 'api');
+
+  const h = mockInteraction({ userId: '111', sub: 'history', options: { stack: '*' } });
+  await handler(h);
+  assert.equal(h.replies[0], '**\u002a**\n+ [work] job — api\n+ [~] home — <@111>');
+});
+
+test('replies are clamped to 2000 chars and never ping', async () => {
+  const db = openDb(':memory:');
+  const handler = makeHandler(db, ALLOWED);
+
+  const long = mockInteraction({
+    userId: '111',
+    sub: 'push',
+    options: { text: '@everyone ' + 'x'.repeat(3000) },
+  });
+  // capture the raw reply payload for this one
+  const payloads = [];
+  long.reply = (msg) => {
+    payloads.push(msg);
+    return Promise.resolve();
+  };
+  await handler(long);
+  assert.equal(payloads[0].content.length, 2000);
+  assert.ok(payloads[0].content.endsWith('\u2026'));
+  assert.deepEqual(payloads[0].allowedMentions, { parse: [] });
 });

@@ -30,7 +30,7 @@ Discord constraints that shaped the design:
 | `/stack ls [limit] [stack]`  | Lists the top tasks (default 5), then `+N more` if the stack is longer. `ls *` lists every stack. |
 | `/stack pop [n] [stack]`     | Removes tasks by position: `2`, `1,3`, or `2-4`. Defaults to `1`, the top. |
 | `/stack cd <stack>`          | Sets the channel's default stack. |
-| `/stack history [limit] [stack]` | Lists recent events, newest first (default 5). |
+| `/stack history [limit] [stack]` | Lists recent events with their actor, newest first (default 5). `history *` spans all stacks. |
 
 `[stack]` defaults to the channel's current stack, or `~` if `cd` was
 never used. Positions refer to the stack as `ls` showed it, and the

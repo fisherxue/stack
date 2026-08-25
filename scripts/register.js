@@ -65,7 +65,7 @@ const commands = [
       {
         type: 1,
         name: 'history',
-        description: 'Recent events, newest first',
+        description: 'Recent events, newest first (* = all stacks)',
         options: [
           {
             type: 4,

@@ -9,6 +9,15 @@ export function allowedUsers(env = process.env.DISCORD_ALLOWED_USERS) {
 }
 
 const DEFAULT_LIMIT = 5;
+const EVENT_SYMBOL = { push: '+', pop: '-', rm: '×' };
+
+// Discord rejects messages over 2000 chars; option strings can be 6000
+// and ls */pop ranges compound, so every reply is clamped.
+// allowedMentions keeps @-text in task titles from pinging anyone.
+function asReply(text) {
+  const content = text.length > 2000 ? `${text.slice(0, 1999)}…` : text;
+  return { content, allowedMentions: { parse: [] } };
+}
 
 function fmtList(stack, tasks, limit) {
   const lines = tasks.slice(0, limit).map((t, i) => `${i + 1}. ${t.title}`);
@@ -58,8 +67,10 @@ export function makeHandler(db, allowed) {
 
     if (!allowed.includes(interaction.user.id)) {
       await interaction.reply(
-        `you're not on the allowlist. (your Discord user ID is ${interaction.user.id} — ` +
-          'add it to DISCORD_ALLOWED_USERS to enable access)',
+        asReply(
+          `you're not on the allowlist. (your Discord user ID is ${interaction.user.id} — ` +
+            'add it to DISCORD_ALLOWED_USERS to enable access)',
+        ),
       );
       return track();
     }
@@ -120,10 +131,16 @@ export function makeHandler(db, allowed) {
         case 'history': {
           const stack = stackOf();
           const limit = interaction.options.getInteger('limit') ?? DEFAULT_LIMIT;
-          const events = ops.history(db, stack, limit);
+          const all = stack === '*';
+          const events = all ? ops.allHistory(db, limit) : ops.history(db, stack, limit);
+          const who = (a) => (a === 'api' ? 'api' : `<@${a}>`);
           text = events.length
             ? `**${stack}**\n${events
-                .map((e) => `${e.type === 'push' ? '+' : '-'} ${e.payload.title}`)
+                .map(
+                  (e) =>
+                    `${EVENT_SYMBOL[e.type]} ${all ? `[${e.stack}] ` : ''}${e.payload.title}` +
+                    ` — ${who(e.actor)}`,
+                )
                 .join('\n')}`
             : `no history for ${stack}`;
           break;
@@ -131,12 +148,12 @@ export function makeHandler(db, allowed) {
         default:
           text = `\`/${sub}\`: not wired up yet.`;
       }
-      await interaction.reply(text);
+      await interaction.reply(asReply(text));
       if (TRANSIENT.has(sub)) track();
     } catch (err) {
       // Errors are always visible replies, never silence.
       console.error(err);
-      return interaction.reply(`error running \`/${sub}\` — check the service log.`);
+      return interaction.reply(asReply(`error running \`/${sub}\` — check the service log.`));
     }
   };
 }

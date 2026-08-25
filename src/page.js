@@ -19,12 +19,14 @@ export function renderStatusPage(db) {
     : '<p>no stacks</p>';
 
   const events = ops.allHistory(db);
+  const symbol = { push: '+', pop: '−', rm: '×' };
   const historyRows = events
     .map(
       (e) =>
         `<tr><td>${esc(e.ts.slice(0, 16).replace('T', ' '))}</td>` +
-        `<td>${e.type === 'push' ? '+' : '−'}</td>` +
-        `<td>${esc(e.stack)}</td><td>${esc(e.payload.title)}</td></tr>`,
+        `<td>${symbol[e.type] ?? '?'}</td>` +
+        `<td>${esc(e.stack)}</td><td>${esc(e.payload.title)}</td>` +
+        `<td>${esc(e.actor)}</td></tr>`,
     )
     .join('');
 
