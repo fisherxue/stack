@@ -17,6 +17,7 @@ function mockInteraction({ userId, sub = 'ls', options = {} }) {
     options: {
       getSubcommand: () => sub,
       getString: (name) => options[name] ?? null,
+      getInteger: (name) => options[name] ?? null,
     },
     reply: (msg) => {
       replies.push(msg);
@@ -224,4 +225,24 @@ test('history shows +/- lines newest first; empty says so', async () => {
   const h = mockInteraction({ userId: '111', sub: 'history' });
   await handler(h);
   assert.equal(h.replies[0], '**~**\n- b\n+ b\n+ a');
+});
+
+test('ls and history accept a limit option; history defaults to 5', async () => {
+  const db = openDb(':memory:');
+  const handler = makeHandler(db, ALLOWED);
+  for (let i = 1; i <= 7; i++) {
+    await handler(mockInteraction({ userId: '111', sub: 'push', options: { text: `t${i}` } }));
+  }
+
+  const ls7 = mockInteraction({ userId: '111', sub: 'ls', options: { limit: 7 } });
+  await handler(ls7);
+  assert.equal(ls7.replies[0], '**~**\n1. t7\n2. t6\n3. t5\n4. t4\n5. t3\n6. t2\n7. t1');
+
+  const h = mockInteraction({ userId: '111', sub: 'history' });
+  await handler(h);
+  assert.equal(h.replies[0], '**~**\n+ t7\n+ t6\n+ t5\n+ t4\n+ t3');
+
+  const h7 = mockInteraction({ userId: '111', sub: 'history', options: { limit: 7 } });
+  await handler(h7);
+  assert.equal(h7.replies[0].split('\n').length, 8); // header + 7 events
 });

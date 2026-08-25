@@ -8,11 +8,11 @@ export function allowedUsers(env = process.env.DISCORD_ALLOWED_USERS) {
     .filter(Boolean);
 }
 
-const LS_LIMIT = 5;
+const DEFAULT_LIMIT = 5;
 
-function fmtList(stack, tasks) {
-  const lines = tasks.slice(0, LS_LIMIT).map((t, i) => `${i + 1}. ${t.title}`);
-  const more = tasks.length - LS_LIMIT;
+function fmtList(stack, tasks, limit) {
+  const lines = tasks.slice(0, limit).map((t, i) => `${i + 1}. ${t.title}`);
+  const more = tasks.length - limit;
   return `**${stack}**\n${lines.join('\n')}${more > 0 ? `\n+${more} more` : ''}`;
 }
 
@@ -73,15 +73,16 @@ export function makeHandler(db, allowed) {
         }
         case 'ls': {
           const stack = stackOf();
+          const limit = interaction.options.getInteger('limit') ?? DEFAULT_LIMIT;
           if (stack === '*') {
             const all = ops.stacks(db);
             if (all.length === 0) return interaction.reply('no stacks');
-            const blocks = all.map(({ name }) => fmtList(name, ops.list(db, name)));
+            const blocks = all.map(({ name }) => fmtList(name, ops.list(db, name), limit));
             return interaction.reply(blocks.join('\n'));
           }
           const tasks = ops.list(db, stack);
           if (tasks.length === 0) return interaction.reply(`${stack} is empty`);
-          return interaction.reply(fmtList(stack, tasks));
+          return interaction.reply(fmtList(stack, tasks, limit));
         }
         case 'cd': {
           const stack = interaction.options.getString('stack');
@@ -90,7 +91,8 @@ export function makeHandler(db, allowed) {
         }
         case 'history': {
           const stack = stackOf();
-          const events = ops.history(db, stack);
+          const limit = interaction.options.getInteger('limit') ?? DEFAULT_LIMIT;
+          const events = ops.history(db, stack, limit);
           if (events.length === 0) return interaction.reply(`no history for ${stack}`);
           const lines = events.map(
             (e) => `${e.type === 'push' ? '+' : '-'} ${e.payload.title}`,

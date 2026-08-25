@@ -44,7 +44,17 @@ const commands = [
         type: 1,
         name: 'ls',
         description: 'Show the stack, top first (* = all stacks)',
-        options: [stackOpt],
+        options: [
+          {
+            type: 4,
+            name: 'limit',
+            description: 'How many tasks to show (default 5)',
+            required: false,
+            min_value: 1,
+            max_value: 50,
+          },
+          stackOpt,
+        ],
       },
       {
         type: 1,
@@ -56,7 +66,17 @@ const commands = [
         type: 1,
         name: 'history',
         description: 'Recent events, newest first',
-        options: [stackOpt],
+        options: [
+          {
+            type: 4,
+            name: 'limit',
+            description: 'How many events to show (default 5)',
+            required: false,
+            min_value: 1,
+            max_value: 50,
+          },
+          stackOpt,
+        ],
       },
     ],
   },
