@@ -36,6 +36,11 @@ Discord constraints that shaped the design:
 never used. Positions refer to the stack as `ls` showed it, and the
 service validates every position before it removes anything.
 
+`push`, `pop`, and `cd` replies stay in chat as the permanent record.
+View replies — `ls`, `history`, and refusals — delete themselves when
+the next `/stack` command arrives, if they are less than 15 minutes
+old (Discord's deletion window).
+
 ## HTTP API
 
 All routes except `/` require `Authorization: Bearer $STACK_API_TOKEN`.

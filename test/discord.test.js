@@ -6,14 +6,15 @@ import * as ops from '../src/ops.js';
 
 const ALLOWED = ['111', '222'];
 
-function mockInteraction({ userId, sub = 'ls', options = {} }) {
+function mockInteraction({ userId, sub = 'ls', options = {}, channel = 'chan1' }) {
   const replies = [];
-  return {
+  const m = {
     replies,
+    deleteCalls: 0,
     isChatInputCommand: () => true,
     commandName: 'stack',
     user: { id: userId },
-    channelId: 'chan1',
+    channelId: channel,
     options: {
       getSubcommand: () => sub,
       getString: (name) => options[name] ?? null,
@@ -23,7 +24,12 @@ function mockInteraction({ userId, sub = 'ls', options = {} }) {
       replies.push(msg);
       return Promise.resolve();
     },
+    deleteReply: () => {
+      m.deleteCalls += 1;
+      return Promise.resolve();
+    },
   };
+  return m;
 }
 
 test('allowlist: unknown user is refused with a visible reply showing their id', async () => {
@@ -245,4 +251,66 @@ test('ls and history accept a limit option; history defaults to 5', async () => 
   const h7 = mockInteraction({ userId: '111', sub: 'history', options: { limit: 7 } });
   await handler(h7);
   assert.equal(h7.replies[0].split('\n').length, 8); // header + 7 events
+});
+
+test('view replies delete when the next command arrives; mutations stay', async () => {
+  const db = openDb(':memory:');
+  const handler = makeHandler(db, ALLOWED);
+
+  const ls1 = mockInteraction({ userId: '111', sub: 'ls' });
+  await handler(ls1);
+  const push = mockInteraction({ userId: '111', sub: 'push', options: { text: 'a' } });
+  await handler(push);
+  assert.equal(ls1.deleteCalls, 1); // ls cleaned up by the push
+  assert.equal(push.deleteCalls, 0);
+
+  const pop = mockInteraction({ userId: '111', sub: 'pop' });
+  await handler(pop);
+  assert.equal(push.deleteCalls, 0); // push reply is permanent
+  assert.equal(pop.deleteCalls, 0);
+
+  const ls2 = mockInteraction({ userId: '111', sub: 'ls' });
+  await handler(ls2);
+  const ls3 = mockInteraction({ userId: '111', sub: 'ls' });
+  await handler(ls3);
+  assert.equal(ls2.deleteCalls, 1); // replaced by ls3
+  assert.equal(ls3.deleteCalls, 0); // still tracked
+});
+
+test('refusal replies are transient too', async () => {
+  const db = openDb(':memory:');
+  const handler = makeHandler(db, ALLOWED);
+
+  const stranger = mockInteraction({ userId: '999' });
+  await handler(stranger);
+  assert.match(stranger.replies[0], /allowlist/);
+
+  await handler(mockInteraction({ userId: '111', sub: 'push', options: { text: 'x' } }));
+  assert.equal(stranger.deleteCalls, 1);
+});
+
+test('transient tracking is per channel', async () => {
+  const db = openDb(':memory:');
+  const handler = makeHandler(db, ALLOWED);
+
+  const lsA = mockInteraction({ userId: '111', sub: 'ls', channel: 'chanA' });
+  await handler(lsA);
+  await handler(mockInteraction({ userId: '111', sub: 'push', options: { text: 'x' }, channel: 'chanB' }));
+  assert.equal(lsA.deleteCalls, 0); // untouched by activity in chanB
+
+  await handler(mockInteraction({ userId: '111', sub: 'push', options: { text: 'y' }, channel: 'chanA' }));
+  assert.equal(lsA.deleteCalls, 1);
+});
+
+test('a failed delete (expired token) does not break handling', async () => {
+  const db = openDb(':memory:');
+  const handler = makeHandler(db, ALLOWED);
+
+  const old = mockInteraction({ userId: '111', sub: 'ls' });
+  old.deleteReply = () => Promise.reject(new Error('Unknown Webhook'));
+  await handler(old);
+
+  const push = mockInteraction({ userId: '111', sub: 'push', options: { text: 'still works' } });
+  await handler(push);
+  assert.equal(push.replies[0], 'still works');
 });

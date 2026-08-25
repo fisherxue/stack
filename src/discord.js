@@ -35,14 +35,33 @@ export function resolvePositions(spec, max) {
   return { positions: [...positions].sort((x, y) => x - y) };
 }
 
+// Replies by push, pop, and cd are the chat's permanent record. View
+// replies — ls, history, allowlist refusals — are transient: the next
+// /stack command in the channel deletes them, best-effort. Deletion
+// uses the old interaction's token, which Discord expires after 15
+// minutes, and the tracking map is in-memory, so a restart or an old
+// token leaves at most one stale view reply per channel.
+const TRANSIENT = new Set(['ls', 'history']);
+
 export function makeHandler(db, allowed) {
+  const transient = new Map(); // channelId → interaction with a deletable view reply
+
   return async (interaction) => {
     if (!interaction.isChatInputCommand?.() || interaction.commandName !== 'stack') return;
+
+    const prev = transient.get(interaction.channelId);
+    if (prev) {
+      transient.delete(interaction.channelId);
+      prev.deleteReply().catch(() => {});
+    }
+    const track = () => transient.set(interaction.channelId, interaction);
+
     if (!allowed.includes(interaction.user.id)) {
-      return interaction.reply(
+      await interaction.reply(
         `you're not on the allowlist. (your Discord user ID is ${interaction.user.id} — ` +
           'add it to DISCORD_ALLOWED_USERS to enable access)',
       );
+      return track();
     }
     const sub = interaction.options.getSubcommand();
     const actor = interaction.user.id;
@@ -54,54 +73,66 @@ export function makeHandler(db, allowed) {
       // reply, so the verb and stack are already on screen. Tasks are
       // addressed by position from the top (1 = top), shown only by ls;
       // global task ids exist only on the HTTP API side.
+      let text;
       switch (sub) {
         case 'push': {
           const task = ops.push(db, stackOf(), interaction.options.getString('text'), actor);
-          return interaction.reply(task.title);
+          text = task.title;
+          break;
         }
         case 'pop': {
           const stack = stackOf();
           const tasks = ops.list(db, stack);
-          if (tasks.length === 0) return interaction.reply(`${stack} is empty`);
+          if (tasks.length === 0) {
+            text = `${stack} is empty`;
+            break;
+          }
           const res = resolvePositions(interaction.options.getString('n') ?? '1', tasks.length);
-          if (res.error) return interaction.reply(res.error);
-          const lines = res.positions.map((n) => {
-            const task = ops.rm(db, tasks[n - 1].id, actor, n === 1 ? 'pop' : 'rm');
-            return `~~${task.title}~~`;
-          });
-          return interaction.reply(lines.join('\n'));
+          if (res.error) {
+            text = res.error;
+            break;
+          }
+          text = res.positions
+            .map((n) => `~~${ops.rm(db, tasks[n - 1].id, actor, n === 1 ? 'pop' : 'rm').title}~~`)
+            .join('\n');
+          break;
         }
         case 'ls': {
           const stack = stackOf();
           const limit = interaction.options.getInteger('limit') ?? DEFAULT_LIMIT;
           if (stack === '*') {
             const all = ops.stacks(db);
-            if (all.length === 0) return interaction.reply('no stacks');
-            const blocks = all.map(({ name }) => fmtList(name, ops.list(db, name), limit));
-            return interaction.reply(blocks.join('\n'));
+            text = all.length
+              ? all.map(({ name }) => fmtList(name, ops.list(db, name), limit)).join('\n')
+              : 'no stacks';
+            break;
           }
           const tasks = ops.list(db, stack);
-          if (tasks.length === 0) return interaction.reply(`${stack} is empty`);
-          return interaction.reply(fmtList(stack, tasks, limit));
+          text = tasks.length ? fmtList(stack, tasks, limit) : `${stack} is empty`;
+          break;
         }
         case 'cd': {
           const stack = interaction.options.getString('stack');
           ops.cd(db, interaction.channelId, stack);
-          return interaction.reply(`**${stack}**`);
+          text = `**${stack}**`;
+          break;
         }
         case 'history': {
           const stack = stackOf();
           const limit = interaction.options.getInteger('limit') ?? DEFAULT_LIMIT;
           const events = ops.history(db, stack, limit);
-          if (events.length === 0) return interaction.reply(`no history for ${stack}`);
-          const lines = events.map(
-            (e) => `${e.type === 'push' ? '+' : '-'} ${e.payload.title}`,
-          );
-          return interaction.reply(`**${stack}**\n${lines.join('\n')}`);
+          text = events.length
+            ? `**${stack}**\n${events
+                .map((e) => `${e.type === 'push' ? '+' : '-'} ${e.payload.title}`)
+                .join('\n')}`
+            : `no history for ${stack}`;
+          break;
         }
         default:
-          return interaction.reply(`\`/${sub}\`: not wired up yet.`);
+          text = `\`/${sub}\`: not wired up yet.`;
       }
+      await interaction.reply(text);
+      if (TRANSIENT.has(sub)) track();
     } catch (err) {
       // Errors are always visible replies, never silence.
       console.error(err);
