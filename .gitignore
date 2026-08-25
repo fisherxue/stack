@@ -14,3 +14,8 @@ node_modules/
 
 # internal dev docs stay local
 CLAUDE.md
+
+# runtime files on the deploy host
+stack.log
+deploy.log
+.deploy.lock

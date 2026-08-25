@@ -159,3 +159,12 @@ stores state in `/var/lib/stack`, reads secrets from a root-owned
 `/etc/stack.env`, and restarts on failure. The unit file's header
 comments contain the install steps. Use this option when the machine is
 shared or the service must outlive its author's account.
+
+### Pull-based auto-deploy
+
+To make a push to `main` deploy itself, run `deploy/pull.sh` from cron
+on the host. The script polls the repository, and on new commits it
+resets the working tree, runs `npm ci` if the lockfile changed, and
+restarts the service. It needs a read-only deploy key and one crontab
+entry; see the script's header comments. This keeps all credentials on
+the host and needs no inbound ports or CI runners.
