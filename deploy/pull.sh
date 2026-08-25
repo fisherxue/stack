@@ -28,5 +28,7 @@ fi
 
 pkill -f 'src/index.js' || true
 sleep 1
-nohup "$NODE_BIN/node" --env-file=.env src/index.js >> stack.log 2>&1 &
+# 9>&- closes the lock fd for the child: a spawned service that inherits
+# it would hold the deploy lock forever and wedge every later run.
+nohup "$NODE_BIN/node" --env-file=.env src/index.js >> stack.log 2>&1 9>&- &
 echo "$(date -Is) deployed $REMOTE"
