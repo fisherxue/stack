@@ -1,0 +1,16 @@
+# dependencies
+node_modules/
+
+# database (SQLite plus its WAL sidecar files)
+*.db
+*.db-wal
+*.db-shm
+
+# secrets: DISCORD_TOKEN, DISCORD_PUBLIC_KEY, etc.
+.env
+
+# local Claude Code overrides
+.claude/settings.local.json
+
+# internal dev docs stay local
+CLAUDE.md

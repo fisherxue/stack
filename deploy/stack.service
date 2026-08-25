@@ -1,0 +1,40 @@
+# Install (interactive sudo, once):
+#   sudo useradd -r -s /usr/sbin/nologin stack
+#   sudo rsync -a --delete --exclude node_modules ~/stack/ /opt/stack/
+#   (cd /opt/stack && sudo npm ci --omit=dev)  # or rsync node_modules built on the same node version
+#   sudo cp ~/.nvm/versions/node/v22.23.2/bin/node /usr/local/bin/node
+#   sudo install -m 600 -o root -g root ~/stack/.env /etc/stack.env && rm ~/stack/.env
+#   sudo cp /opt/stack/deploy/stack.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now stack
+
+[Unit]
+Description=stack - shared task stack (Discord gateway + HTTP API)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=stack
+Group=stack
+# Secrets live in a root-owned 600 file, never in this world-readable unit.
+EnvironmentFile=/etc/stack.env
+Environment=DB_PATH=/var/lib/stack/stack.db
+StateDirectory=stack
+WorkingDirectory=/opt/stack
+ExecStart=/usr/local/bin/node /opt/stack/src/index.js
+Restart=on-failure
+RestartSec=5
+
+# A compromised service must not yield a login user's account.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+CapabilityBoundingSet=
+RestrictSUIDSGID=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+
+[Install]
+WantedBy=multi-user.target
